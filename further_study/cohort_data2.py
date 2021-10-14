@@ -15,16 +15,14 @@ def all_houses(filename):
       - set[str]: a set of strings
     """
 
-    houses = set()
+    # We use a single underscore (_) as variable names below.
+    # This is a way to say, "Hey don't worry about this variable
+    # because we'll never use it --- we only care about `house`.
+    #
+    # Python doesn't handle underscores in a special way or anything ---
+    # it's still just a variable name.
 
-    cohort_data = open(filename)
-
-    for line in cohort_data:
-        house = line.rstrip().split("|")[2]
-        if house:
-            houses.add(house)
-
-    return houses
+    return {house for _, house, *_ in all_data(filename) if house}
 
 
 def students_by_cohort(filename, cohort="All"):
@@ -55,23 +53,36 @@ def students_by_cohort(filename, cohort="All"):
       - list[list]: a list of lists
     """
 
-    students = []
+    # We have a pretty difficult to understand, compound conditional
+    # expression inside of the for-loop below. It's good to avoid
+    # writing compound conditional expressions that aren't immediately
+    # understandable.
+    #
+    # We should attempt to tell a better "story" with our code. What
+    # we *want* to express is that, if `cohort` == `"All"`, then return
+    # all the students. Otherwise, filter the students by cohort.
+    #
+    # The problem is that instructors and ghosts are all mixed in with
+    # students. Let's tackle this problem *before* we filter (or not filter)
+    # the students by cohort.
 
-    cohort_data = open(filename)
+    # Create a list of students' full names and cohort names
+    student_data = [
+        (fullname, cohort_name)
+        for fullname, _, _, cohort_name in all_data(filename)
+        if cohort_name not in ("I", "G")  # Filter out instructors, ghosts
+    ]
 
-    for line in cohort_data:
-        # The `_` is a way to say, "Hey don't worry about this variable
-        # because we'll never use it --- we only care about `first`,
-        # `last`, and `cohort_name`.
-        #
-        # Python doesn't handle underscores in a special way or anything ---
-        # it's still just a variable name.
-        first, last, _, _, cohort_name = line.rstrip().split("|")
-
-        if cohort_name not in ("I", "G") and cohort in ("All", cohort_name):
-            students.append(f"{first} {last}")
-
-    return sorted(students)
+    if cohort == "All":
+        return sorted([fullname for fullname, _ in student_data])
+    else:
+        return sorted(
+            [
+                fullname
+                for fullname, cohort_name in student_data
+                if cohort_name == cohort
+            ]
+        )
 
 
 def all_names_by_house(filename):
@@ -113,31 +124,27 @@ def all_names_by_house(filename):
     ghosts = []
     instructors = []
 
-    cohort_data = open(filename)
-
-    for line in cohort_data:
-        first, last, house, _, cohort_name = line.rstrip().split("|")
-
-        full_name = f"{first} {last}"
-
-        if house:
-            if house == "Dumbledore's Army":
-                dumbledores_army.append(full_name)
-            elif house == "Gryffindor":
-                gryffindor.append(full_name)
-            elif house == "Hufflepuff":
-                hufflepuff.append(full_name)
-            elif house == "Ravenclaw":
-                ravenclaw.append(full_name)
-            elif house == "Slytherin":
-                slytherin.append(full_name)
-        else:
-            # If the person doesn't have a house, they're a non-student.
-            # For now, the only non-students are ghosts and instructors
+    for fullname, house, _, cohort_name in all_data(filename):
+        # Sometimes it makes code easier for someone else to read
+        # and understand if we take care of the weird edge case
+        # of ghosts and instructors first before taking care
+        # of the normal case.
+        if not house:
             if cohort_name == "G":
-                ghosts.append(full_name)
+                ghosts.append(fullname)
             elif cohort_name == "I":
-                instructors.append(full_name)
+                instructors.append(fullname)
+
+        if house == "Dumbledore's Army":
+            dumbledores_army.append(fullname)
+        elif house == "Gryffindor":
+            gryffindor.append(fullname)
+        elif house == "Hufflepuff":
+            hufflepuff.append(fullname)
+        elif house == "Ravenclaw":
+            ravenclaw.append(fullname)
+        elif house == "Slytherin":
+            slytherin.append(fullname)
 
     return [
         sorted(dumbledores_army),
@@ -153,10 +160,10 @@ def all_names_by_house(filename):
 def all_data(filename):
     """Return all the data in a file.
 
-    Each line in the file is a tuple of (full_name, house, advisor, cohort)
+    Each line in the file is a tuple of (full_name, house, adviser, cohort)
 
     Iterate over the data to create a big list of tuples that individually
-    hold all the data for each person. (full_name, house, advisor, cohort)
+    hold all the data for each person. (full_name, house, adviser, cohort)
 
     For example:
       >>> all_student_data('cohort_data.txt')
@@ -168,16 +175,17 @@ def all_data(filename):
     Return:
       - list[tuple]: a list of tuples
     """
+    with open(filename) as cohort_data:
 
-    all_data = []
+        # `line.rstrip().split("|")` returns a list. A more semantic data
+        # structure to use to represent rows of data is a tuple. So, let's
+        # actually have this function return a list of tuples instead of
+        # a list of lists.
 
-    cohort_data = open(filename)
+        data = [tuple(line.rstrip().split("|")) for line in cohort_data]
 
-    for line in cohort_data:
-        first, last, house, advisor, cohort_name = line.rstrip().split("|")
-        all_data.append((f"{first} {last}", house, advisor, cohort_name))
-
-    return all_data
+    # Here, `rest` means "the rest of the data"
+    return [(f"{first} {last}", *rest) for first, last, *rest in data]
 
 
 def get_cohort_for(filename, name):
@@ -221,17 +229,26 @@ def find_duped_last_names(filename):
     """
 
     dupes = set()
-    seen = set()
 
-    for full_name, _, _, _ in all_data(filename):
-        last = full_name.split(" ")[-1]
-
-        if last in seen:
+    seen_names = set()
+    for first, last, *_ in read_cohort_data(filename):
+        if last in seen_names:
             dupes.add(last)
 
-        seen.add(last)
+        seen_names.add(last)
 
     return dupes
+
+
+# Helper function that returns a student's house
+
+
+def get_house_for(filename, name):
+    """Return house of student with `name`."""
+
+    for fullname, house, *_ in all_data(filename):
+        if fullname == name:
+            return house
 
 
 def get_housemates_for(filename, name):
@@ -246,27 +263,16 @@ def get_housemates_for(filename, name):
     {'Angelina Johnson', ..., 'Seamus Finnigan'}
     """
 
-    housemates = set()
+    target_cohort = get_cohort_for(filename, name)
+    target_house = get_house_for(filename, name)
 
-    target_person = None
-    for person in all_data(filename):
-        full_name, house, advisor, cohort_name = person
-
-        if full_name == name:
-            target_person = person
-            break
-
-    if target_person:
-        target_name, target_house, _, target_cohort = target_person
-
-        for full_name, house, _, cohort_name in all_data(filename):
-            if (house, cohort_name) == (
-                target_house,
-                target_cohort,
-            ) and full_name != name:
-                housemates.add(full_name)
-
-    return housemates
+    return {
+        full_name
+        for full_name, house, _, cohort_name in all_data(filename)
+        if full_name != name
+        and house == target_house
+        and cohort_name == target_cohort
+    }
 
 
 ##############################################################################
@@ -284,3 +290,4 @@ if __name__ == "__main__":
     doctest.master.summarize(1)
     if result.failed == 0:
         print("ALL TESTS PASSED")
+
